@@ -1,0 +1,14 @@
+[Unit]
+Description=UGREEN CM762 AIC8800 Wi-Fi driver
+After=local-fs.target systemd-udevd.service
+Before=NetworkManager.service
+RequiresMountsFor=/var/lib/aic8800-ugreen
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/bash /etc/aic8800-ugreen/load.sh
+RemainAfterExit=yes
+TimeoutStartSec=30
+
+[Install]
+WantedBy=multi-user.target

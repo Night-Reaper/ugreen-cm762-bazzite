@@ -1,0 +1,6 @@
+/build/
+*.zip
+*.ko
+*.deb
+*.log
+__pycache__/

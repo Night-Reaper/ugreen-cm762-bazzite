@@ -1,0 +1,270 @@
+--- a/drivers/aic8800/aic8800_fdrv/aicwf_compat_8800d80.c
++++ b/drivers/aic8800/aic8800_fdrv/aicwf_compat_8800d80.c
+@@ -39,7 +39,17 @@
+     char *filename = FW_USERCONFIG_NAME_8800D80;
+ 
+ #ifndef ANDROID_PLATFORM
+-            sprintf(aic_fw_path, "%s/%s", aic_fw_path, "aic8800D80");
++            {
++                const char *leaf = strrchr(aic_fw_path, '/');
++                size_t len = strlen(aic_fw_path);
++
++                leaf = leaf ? leaf + 1 : aic_fw_path;
++                if (strcmp(leaf, "aic8800D80")) {
++                    if (snprintf(aic_fw_path + len, sizeof(aic_fw_path) - len,
++                                 "/aic8800D80") >= sizeof(aic_fw_path) - len)
++                        return -ENAMETOOLONG;
++                }
++            }
+ #endif
+ 
+     AICWFDBG(LOGINFO, "userconfig file path:%s \r\n", filename);
+--- a/drivers/aic8800/aic8800_fdrv/rwnx_main.c
++++ b/drivers/aic8800/aic8800_fdrv/rwnx_main.c
+@@ -3377,7 +3377,13 @@
+                 #if LINUX_VERSION_CODE < KERNEL_VERSION(4, 0, 0)
+                 sinfo.filled |= STATION_INFO_ASSOC_REQ_IES;
+                 #endif
+-		        cfg80211_new_sta(rwnx_vif->ndev, sta->mac_addr, &sinfo, GFP_KERNEL);
++		        cfg80211_new_sta(
++#if LINUX_VERSION_CODE >= KERNEL_VERSION(7, 2, 0)
++ &rwnx_vif->wdev,
++#else
++ rwnx_vif->ndev,
++#endif
++ sta->mac_addr, &sinfo, GFP_KERNEL);
+             }
+ 
+ #ifdef CONFIG_BAND_STEERING
+@@ -3493,7 +3499,13 @@
+ 				}
+ 			}
+             		if (rwnx_vif->wdev.iftype == NL80211_IFTYPE_AP || rwnx_vif->wdev.iftype == NL80211_IFTYPE_P2P_GO) {
+-                		cfg80211_del_sta(rwnx_vif->ndev, cur->mac_addr, GFP_KERNEL);
++                		cfg80211_del_sta(
++#if LINUX_VERSION_CODE >= KERNEL_VERSION(7, 2, 0)
++ &rwnx_vif->wdev,
++#else
++ rwnx_vif->ndev,
++#endif
++ cur->mac_addr, GFP_KERNEL);
+             		}
+ 
+ #ifdef AICWF_RX_REORDER
+@@ -6205,6 +6217,59 @@
+     return 0;
+ }
+ 
++#if LINUX_VERSION_CODE >= KERNEL_VERSION(7, 2, 0)
++static int ugreen_72_add_key(struct wiphy *wiphy, struct wireless_dev *wdev, int link_id, u8 key_index, bool pairwise, const u8 *mac_addr, struct key_params *params)
++{
++    return rwnx_cfg80211_add_key(wiphy, wdev->netdev, link_id, key_index, pairwise, mac_addr, params);
++}
++
++static int ugreen_72_get_key(struct wiphy *wiphy, struct wireless_dev *wdev, int link_id, u8 key_index, bool pairwise, const u8 *mac_addr, void *cookie, void (*callback)(void *, struct key_params *))
++{
++    return rwnx_cfg80211_get_key(wiphy, wdev->netdev, link_id, key_index, pairwise, mac_addr, cookie, callback);
++}
++
++static int ugreen_72_del_key(struct wiphy *wiphy, struct wireless_dev *wdev, int link_id, u8 key_index, bool pairwise, const u8 *mac_addr)
++{
++    return rwnx_cfg80211_del_key(wiphy, wdev->netdev, link_id, key_index, pairwise, mac_addr);
++}
++
++static int ugreen_72_set_default_mgmt_key(struct wiphy *wiphy, struct wireless_dev *wdev, int link_id, u8 key_index)
++{
++    return rwnx_cfg80211_set_default_mgmt_key(wiphy, wdev->netdev, link_id, key_index);
++}
++
++static int ugreen_72_add_station(struct wiphy *wiphy, struct wireless_dev *wdev, const u8 *mac, struct station_parameters *params)
++{
++    return rwnx_cfg80211_add_station(wiphy, wdev->netdev, mac, params);
++}
++
++static int ugreen_72_del_station(struct wiphy *wiphy, struct wireless_dev *wdev, struct station_del_parameters *params)
++{
++    return rwnx_cfg80211_del_station_compat(wiphy, wdev->netdev, params);
++}
++
++static int ugreen_72_change_station(struct wiphy *wiphy, struct wireless_dev *wdev, const u8 *mac, struct station_parameters *params)
++{
++    return rwnx_cfg80211_change_station(wiphy, wdev->netdev, mac, params);
++}
++
++static int ugreen_72_get_station(struct wiphy *wiphy, struct wireless_dev *wdev, const u8 *mac, struct station_info *sinfo)
++{
++    return rwnx_cfg80211_get_station(wiphy, wdev->netdev, mac, sinfo);
++}
++
++static int ugreen_72_dump_station(struct wiphy *wiphy, struct wireless_dev *wdev, int idx, u8 *mac, struct station_info *sinfo)
++{
++    return rwnx_cfg80211_dump_station(wiphy, wdev->netdev, idx, mac, sinfo);
++}
++
++static int ugreen_72_remain_on_channel(struct wiphy *wiphy, struct wireless_dev *wdev, struct ieee80211_channel *chan, unsigned int duration, u64 *cookie, const u8 *addr)
++{
++    return rwnx_cfg80211_remain_on_channel(wiphy, wdev, chan, duration, cookie);
++}
++
++#endif
++
+ static struct cfg80211_ops rwnx_cfg80211_ops = {
+     .add_virtual_intf = rwnx_cfg80211_add_iface,
+     .del_virtual_intf = rwnx_cfg80211_del_iface,
+@@ -6214,14 +6279,42 @@
+     .scan = rwnx_cfg80211_scan,
+     .connect = rwnx_cfg80211_connect,
+     .disconnect = rwnx_cfg80211_disconnect,
++#if LINUX_VERSION_CODE >= KERNEL_VERSION(7, 2, 0)
++    .add_key = ugreen_72_add_key,
++#else
+     .add_key = rwnx_cfg80211_add_key,
++#endif
++#if LINUX_VERSION_CODE >= KERNEL_VERSION(7, 2, 0)
++    .get_key = ugreen_72_get_key,
++#else
+     .get_key = rwnx_cfg80211_get_key,
++#endif
++#if LINUX_VERSION_CODE >= KERNEL_VERSION(7, 2, 0)
++    .del_key = ugreen_72_del_key,
++#else
+     .del_key = rwnx_cfg80211_del_key,
++#endif
+     .set_default_key = rwnx_cfg80211_set_default_key,
++#if LINUX_VERSION_CODE >= KERNEL_VERSION(7, 2, 0)
++    .set_default_mgmt_key = ugreen_72_set_default_mgmt_key,
++#else
+     .set_default_mgmt_key = rwnx_cfg80211_set_default_mgmt_key,
++#endif
++#if LINUX_VERSION_CODE >= KERNEL_VERSION(7, 2, 0)
++    .add_station = ugreen_72_add_station,
++#else
+     .add_station = rwnx_cfg80211_add_station,
++#endif
++#if LINUX_VERSION_CODE >= KERNEL_VERSION(7, 2, 0)
++    .del_station = ugreen_72_del_station,
++#else
+     .del_station = rwnx_cfg80211_del_station_compat,
++#endif
++#if LINUX_VERSION_CODE >= KERNEL_VERSION(7, 2, 0)
++    .change_station = ugreen_72_change_station,
++#else
+     .change_station = rwnx_cfg80211_change_station,
++#endif
+     .mgmt_tx = rwnx_cfg80211_mgmt_tx,
+     .start_ap = rwnx_cfg80211_start_ap,
+     .change_beacon = rwnx_cfg80211_change_beacon,
+@@ -6234,8 +6327,16 @@
+     .set_tx_power = rwnx_cfg80211_set_tx_power,
+ //    .get_tx_power = rwnx_cfg80211_get_tx_power,
+     .set_power_mgmt = rwnx_cfg80211_set_power_mgmt,
++#if LINUX_VERSION_CODE >= KERNEL_VERSION(7, 2, 0)
++    .get_station = ugreen_72_get_station,
++#else
+     .get_station = rwnx_cfg80211_get_station,
++#endif
++#if LINUX_VERSION_CODE >= KERNEL_VERSION(7, 2, 0)
++    .remain_on_channel = ugreen_72_remain_on_channel,
++#else
+     .remain_on_channel = rwnx_cfg80211_remain_on_channel,
++#endif
+     .cancel_remain_on_channel = rwnx_cfg80211_cancel_remain_on_channel,
+     .dump_survey = rwnx_cfg80211_dump_survey,
+     .get_channel = rwnx_cfg80211_get_channel,
+@@ -6325,8 +6426,16 @@
+     if (!rwnx_mod_params.mesh)
+         return;
+ 
++#if LINUX_VERSION_CODE >= KERNEL_VERSION(7, 2, 0)
++    rwnx_cfg80211_ops.get_station = ugreen_72_get_station;
++#else
+     rwnx_cfg80211_ops.get_station = rwnx_cfg80211_get_station;
++#endif
++#if LINUX_VERSION_CODE >= KERNEL_VERSION(7, 2, 0)
++    rwnx_cfg80211_ops.dump_station = ugreen_72_dump_station;
++#else
+     rwnx_cfg80211_ops.dump_station = rwnx_cfg80211_dump_station;
++#endif
+     rwnx_cfg80211_ops.add_mpath = rwnx_cfg80211_add_mpath;
+     rwnx_cfg80211_ops.del_mpath = rwnx_cfg80211_del_mpath;
+     rwnx_cfg80211_ops.change_mpath = rwnx_cfg80211_change_mpath;
+--- a/drivers/aic8800/aic8800_fdrv/rwnx_msg_tx.c
++++ b/drivers/aic8800/aic8800_fdrv/rwnx_msg_tx.c
+@@ -1,3 +1,4 @@
++#include <linux/string.h>
+ /**
+  ******************************************************************************
+  *
+@@ -4704,7 +4705,7 @@
+         return -ENOMEM;
+ 
+     /* Set parameters for the MM_DBG_TRIGGER_REQ message */
+-    strncpy(req->error, msg, sizeof(req->error));
++    strscpy_pad(req->error, msg, sizeof(req->error));
+ 
+     /* Send the MM_DBG_TRIGGER_REQ message to LMAC FW */
+     return rwnx_send_msg(rwnx_hw, req, 0, -1, NULL);
+--- a/drivers/aic8800/aic8800_fdrv/rwnx_tdls.c
++++ b/drivers/aic8800/aic8800_fdrv/rwnx_tdls.c
+@@ -97,6 +97,12 @@
+     return 0;
+ }
+ 
++#if LINUX_VERSION_CODE >= KERNEL_VERSION(7, 2, 0)
++#define UGREEN_TDLS_RESP(m) ((m)->u.action.tdls_discover_resp)
++#else
++#define UGREEN_TDLS_RESP(m) ((m)->u.action.u.tdls_discover_resp)
++#endif
++
+ static int
+ rwnx_prep_tdls_direct(struct rwnx_hw *rwnx_hw, struct rwnx_vif *rwnx_vif,
+                       const u8 *peer, u8 action_code, u8 dialog_token,
+@@ -115,11 +121,15 @@
+ 
+     switch (action_code) {
+     case WLAN_PUB_ACTION_TDLS_DISCOVER_RES:
+-        skb_put(skb, 1 + sizeof(mgmt->u.action.u.tdls_discover_resp));
++        skb_put(skb, 1 + sizeof(UGREEN_TDLS_RESP(mgmt)));
+         mgmt->u.action.category = WLAN_CATEGORY_PUBLIC;
+-        mgmt->u.action.u.tdls_discover_resp.action_code = WLAN_PUB_ACTION_TDLS_DISCOVER_RES;
+-        mgmt->u.action.u.tdls_discover_resp.dialog_token = dialog_token;
+-        mgmt->u.action.u.tdls_discover_resp.capability =
++        #if LINUX_VERSION_CODE >= KERNEL_VERSION(7, 2, 0)
++        mgmt->u.action.action_code = WLAN_PUB_ACTION_TDLS_DISCOVER_RES;
++#else
++        UGREEN_TDLS_RESP(mgmt).action_code = WLAN_PUB_ACTION_TDLS_DISCOVER_RES;
++#endif
++        UGREEN_TDLS_RESP(mgmt).dialog_token = dialog_token;
++        UGREEN_TDLS_RESP(mgmt).capability =
+             cpu_to_le16(rwnx_get_tdls_sta_capab(rwnx_vif, status_code));
+         break;
+     default:
+--- a/drivers/aic8800/aic_load_fw/aicbluetooth_cmds.c
++++ b/drivers/aic8800/aic_load_fw/aicbluetooth_cmds.c
+@@ -109,6 +109,8 @@
+                 cmd_complete(cmd_mgr, cmd);
+             }
+             spin_unlock_bh(&cmd_mgr->lock);
++            kfree(cmd);
++            return -ETIMEDOUT;
+         }
+         else{
+             kfree(cmd);
+--- a/drivers/aic8800/aic_load_fw/aicwf_usb.c
++++ b/drivers/aic8800/aic_load_fw/aicwf_usb.c
+@@ -1769,11 +1769,13 @@
+ 		goto out_free_bus;
+ 	}
+ 
+-    if (system_config(usb_dev)) {
++    ret = system_config(usb_dev);
++    if (ret) {
+         goto out_free_bus;
+     }
+ 
+-    if (aicfw_download_fw(usb_dev)){
++    ret = aicfw_download_fw(usb_dev);
++    if (ret) {
+         goto out_free_bus;
+     }
+     

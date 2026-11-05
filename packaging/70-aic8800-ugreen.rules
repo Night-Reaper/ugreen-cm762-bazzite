@@ -1,0 +1,2 @@
+# UGREEN AX900 CM762 installation-disk mode only; standard eject, no flash writes.
+ACTION=="add", SUBSYSTEM=="usb", ENV{DEVTYPE}=="usb_device", ATTR{idVendor}=="a69c", ATTR{idProduct}=="5723", RUN+="/usr/bin/usb_modeswitch -KQ -v 0xa69c -p 0x5723"

@@ -1,0 +1,6 @@
+This repository contains two categories of material:
+
+* Scripts, documentation and packaging newly authored for this project: MIT (see LICENSE-MIT).
+* patches/linux-7.2.patch: driver modifications offered under GPL-2.0-only. Original copyright notices and the licenses of the vendor files remain applicable. See LICENSE-GPL-2.0.
+
+The UGREEN archive, original driver sources, firmware, compiled modules, and local diagnostic logs are not distributed in this repository. Obtain the original archive from UGREEN. No license to the vendor firmware is granted by this repository.
