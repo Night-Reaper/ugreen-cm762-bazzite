@@ -14,7 +14,7 @@ A reproducible build and persistent local installation of UGREEN's official CM76
 | Комплект производителя | UGREEN AX900 LinuxDriver V1.1, release `2025_0605_3d4cc869` |
 | Результат | Создан `wlan0`, подключение через NetworkManager; пользователь подтвердил работу Wi-Fi |
 
-Это не гарантия поддержки всех адаптеров AX900/CM762 или всех ядер 7.x. В проверенной системе Secure Boot и SELinux были отключены изначально; проект их не отключает. Подпись модулей для Secure Boot здесь не реализована. Работа после перезагрузки пока не подтверждена отдельным тестом.
+Это не гарантия поддержки всех адаптеров AX900/CM762 или всех ядер 7.x. Secure Boot был отключён изначально. На хосте SELinux работает в enforcing; установщик назначает постоянные метки файлов модулей и firmware и не отключает SELinux. Подпись модулей для Secure Boot здесь не реализована. Работа после перезагрузки пока не подтверждена отдельным тестом.
 
 ## Что было сломано
 
@@ -32,7 +32,7 @@ Radxa SDK V5 загружал основной образ размером 35807
 SHA256: 85d3e0d62d82f874ad3aa3fe12061658aeca570adfeccff526c055a5e6218bd6
 ```
 
-Нужны Python 3.11+, Git, make, GCC и инструменты сборки соответствующего ядра, kmod (`modinfo`), usb_modeswitch, systemd и NetworkManager. Каталог `/lib/modules/$(uname -r)/build` должен содержать development-файлы **именно работающего ядра**. Для нестандартного `ogc`-ядра обычный Fedora kernel-devel другой версии не подходит. Bazzite использует образную систему: способы получения инструментов зависят от вашего образа; сборка через пакетный менеджер контейнера не устанавливает драйвер на хост.
+Нужны Python 3.11+, Git, make, GCC и инструменты сборки соответствующего ядра, kmod (`modinfo`), usb_modeswitch, systemd, NetworkManager и `semanage`/`restorecon` (Fedora: policycoreutils-python-utils). Каталог `/lib/modules/$(uname -r)/build` должен содержать development-файлы **именно работающего ядра**. Для нестандартного `ogc`-ядра обычный Fedora kernel-devel другой версии не подходит. Bazzite использует образную систему: способы получения инструментов зависят от вашего образа; сборка через пакетный менеджер контейнера не устанавливает драйвер на хост.
 
 В каталоге этого репозитория:
 
@@ -54,7 +54,7 @@ sudo bash build/install/install.sh
 
 Загруженные модули должны совпадать по `srcversion` с устанавливаемыми; иначе служба откажется работать и ничего не выгрузит. На исходной проверенной машине установка прошла без разрыва текущего Wi-Fi. При первой установке на другой машине возможна инициализация адаптера. Для горячего подключения из другого режима USB дополнительные правила не предоставляются.
 
-Служба использует только модули для точной версии текущего ядра. Никаких `--force`, обновления flash, автоматической перезагрузки или отключения Secure Boot. SELinux в enforcing-режиме отдельно не проверялся и может потребовать настройки меток/политики.
+Служба использует только модули для точной версии текущего ядра. Никаких `--force`, обновления flash, автоматической перезагрузки или отключения Secure Boot. Для SELinux установщик регистрирует точечные `fcontext`-правила: `.ko` получают `modules_object_t`, firmware — `lib_t`, как в стандартных каталогах системы. В журнале первого boot выявлен запрет `module_load` из-за прежней метки `var_lib_t`; исправление меток подготовлено, повторный boot ещё не проверен.
 
 ```bash
 systemctl status aic8800-ugreen.service --no-pager
@@ -63,6 +63,18 @@ nmcli --wait 20 device wifi list ifname wlan0 --rescan yes
 ```
 
 Замените `wlan0`, если имя отличается. Подключайтесь через настройки сети или `nmcli --ask`; не отправляйте пароль в issue. При следующей выбранной вами перезагрузке проверьте службу и Wi-Fi повторно. Не удаляйте каталог прежнего временного теста до переподключения адаптера/перезагрузки: текущий fdrv может ещё использовать его путь для userconfig.
+
+## Если автозагрузка отказала с Permission denied (SELinux)
+
+Если журнал показывает AVC `module_load`, домен `kmod_t` и тип файла `var_lib_t`, назначьте стандартные метки файлов, не отключая SELinux:
+
+```bash
+sudo bash packaging/selinux-labels.sh
+sudo systemctl restart aic8800-ugreen.service
+systemctl status aic8800-ugreen.service --no-pager
+```
+
+Запускайте из каталога репозитория с исправлением. Скрипт сохраняет экспорт локальных настроек SELinux и прежние метки в `/var/tmp/aic8800-selinux-backup.*`, добавляет только два точечных правила fcontext и применяет их через `restorecon`. Ни разрешающий policy-модуль, ни `setenforce 0` не требуются. Если интерфейс не появился после тёплой перезагрузки, отключите только Wi-Fi адаптер на 15 секунд и подключите обратно; питание компьютера и остальные USB-устройства трогать не нужно. Сохраните свежий журнал службы и AVC, если ошибка повторится.
 
 ## Обновление ядра
 
@@ -87,7 +99,7 @@ python3 scripts/build.py /path/to/UGREEN_AIC-AX900_LinuxDriver_V1.1.zip
 sudo bash build/install/install.sh
 ```
 
-The builder never runs as root and verifies the archive checksum. The installer backs up existing task-specific files, installs into persistent `/var/lib` and `/etc`, and enables the local loader service and a device-specific USB eject rule. It does not modify `/usr`, reboot, force-load modules or disable Secure Boot. Secure Boot signing and SELinux enforcing support are not provided/tested. Automatic rebuilds across kernel updates are not configured: rebuild for each exact kernel. Read the installer before running it.
+The builder never runs as root and verifies the archive checksum. The installer backs up existing task-specific files, installs into persistent `/var/lib` and `/etc`, and enables the local loader service and a device-specific USB eject rule. It does not modify `/usr`, reboot, force-load modules or disable Secure Boot. Secure Boot signing is not provided. SELinux module-loading denial was diagnosed on the host; the installer now persists standard module/firmware labels without weakening enforcement. Post-fix boot validation is pending. Automatic rebuilds across kernel updates are not configured: rebuild for each exact kernel. Read the installer before running it.
 
 Disable reversibly with `sudo bash /etc/aic8800-ugreen/disable.sh`. Retained loaded modules preserve the existing connection.
 

@@ -6,6 +6,8 @@ source_dir=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
 kernel=$(cat "$source_dir/KERNEL")
 [ "$(uname -r)" = "$kernel" ] || { echo 'Kernel changed; rebuild before installing'; exit 1; }
 command -v usb_modeswitch >/dev/null
+command -v semanage >/dev/null
+command -v restorecon >/dev/null
 [ -x /usr/bin/usb_modeswitch ]
 systemctl cat NetworkManager.service >/dev/null
 cd "$source_dir"
@@ -39,10 +41,12 @@ install -m 644 "$source_dir/70-aic8800-ugreen.rules" /etc/udev/rules.d/70-aic880
 # Preserve the full provenance and rollback instructions with the installed files.
 install -m 644 "$source_dir/README.md" /var/lib/aic8800-ugreen/README.md
 install -m 644 "$source_dir/disable.sh" /etc/aic8800-ugreen/disable.sh
+install -m 644 "$source_dir/selinux-labels.sh" /etc/aic8800-ugreen/selinux-labels.sh
 printf '%s\n' "$backup" > /etc/aic8800-ugreen/last-backup
 if command -v restorecon >/dev/null; then
     restorecon -R /etc/aic8800-ugreen /etc/systemd/system/aic8800-ugreen.service /etc/udev/rules.d/70-aic8800-ugreen.rules /var/lib/aic8800-ugreen || true
 fi
+/usr/bin/bash /etc/aic8800-ugreen/selinux-labels.sh
 systemctl daemon-reload
 udevadm control --reload-rules
 # No udev trigger: do not disturb the currently working Wi-Fi connection.
