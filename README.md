@@ -54,7 +54,7 @@ sudo bash build/install/install.sh
 
 Загруженные модули должны совпадать по `srcversion` с устанавливаемыми; иначе служба откажется работать и ничего не выгрузит. На исходной проверенной машине установка прошла без разрыва текущего Wi-Fi. При первой установке на другой машине возможна инициализация адаптера. Для горячего подключения из другого режима USB дополнительные правила не предоставляются.
 
-Служба использует только модули для точной версии текущего ядра. Никаких `--force`, обновления flash, автоматической перезагрузки или отключения Secure Boot. Для SELinux установщик регистрирует точечные `fcontext`-правила: `.ko` получают `modules_object_t`, firmware — `lib_t`, как в стандартных каталогах системы. В журнале первого boot выявлен запрет `module_load` из-за прежней метки `var_lib_t`; исправление меток подготовлено, повторный boot ещё не проверен.
+Служба использует только модули для точной версии текущего ядра. Никаких `--force`, обновления flash, автоматической перезагрузки или отключения Secure Boot. Для SELinux установщик регистрирует точечные `fcontext`-правила: `.ko` получают `modules_object_t`, firmware — `lib_t`, как в стандартных каталогах системы. В журнале первого boot выявлен запрет `module_load` из-за прежней метки `var_lib_t`; исправление меток проверено: перезапуск systemd-службы завершился с `0/SUCCESS`, `wlan0` подключился через NetworkManager при действующем SELinux. Повторный boot после исправления ещё не проверен.
 
 ```bash
 systemctl status aic8800-ugreen.service --no-pager
@@ -99,7 +99,7 @@ python3 scripts/build.py /path/to/UGREEN_AIC-AX900_LinuxDriver_V1.1.zip
 sudo bash build/install/install.sh
 ```
 
-The builder never runs as root and verifies the archive checksum. The installer backs up existing task-specific files, installs into persistent `/var/lib` and `/etc`, and enables the local loader service and a device-specific USB eject rule. It does not modify `/usr`, reboot, force-load modules or disable Secure Boot. Secure Boot signing is not provided. SELinux module-loading denial was diagnosed on the host; the installer now persists standard module/firmware labels without weakening enforcement. Post-fix boot validation is pending. Automatic rebuilds across kernel updates are not configured: rebuild for each exact kernel. Read the installer before running it.
+The builder never runs as root and verifies the archive checksum. The installer backs up existing task-specific files, installs into persistent `/var/lib` and `/etc`, and enables the local loader service and a device-specific USB eject rule. It does not modify `/usr`, reboot, force-load modules or disable Secure Boot. Secure Boot signing is not provided. SELinux module-loading denial was diagnosed on the host; the installer now persists standard module/firmware labels without weakening enforcement. After correcting labels, service restart succeeded and Wi-Fi connected with SELinux enforcement unchanged. Post-fix boot validation is pending. Automatic rebuilds across kernel updates are not configured: rebuild for each exact kernel. Read the installer before running it.
 
 Disable reversibly with `sudo bash /etc/aic8800-ugreen/disable.sh`. Retained loaded modules preserve the existing connection.
 
